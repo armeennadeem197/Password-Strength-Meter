@@ -1,17 +1,13 @@
 import streamlit as st
 import pandas as pd
-import csv
-import os
-import datetime
 import re
 import random
 import string
-import plotly.express as px
-import plotly.graph_objects as go
+import secrets
 import hashlib
-from datetime import timedelta
 import base64
-import io
+from datetime import datetime
+import plotly.express as px
 
 # Set page configuration
 st.set_page_config(
@@ -34,13 +30,7 @@ def local_css():
             height: 2.5em;
             font-weight: bold;
         }
-        .password-container {
-            background-color: #f0f2f6;
-            padding: 20px;
-            border-radius: 10px;
-            margin-bottom: 20px;
-        }
-        .mood-container {
+        .password-container, .mood-container {
             background-color: #f0f2f6;
             padding: 20px;
             border-radius: 10px;
@@ -63,65 +53,74 @@ def local_css():
             border-radius: 5px;
             border-left: 3px solid #4CAF50;
         }
+        .tooltip {
+            position: relative;
+            display: inline-block;
+            border-bottom: 1px dotted black;
+        }
+        .tooltip .tooltiptext {
+            visibility: hidden;
+            width: 120px;
+            background-color: #555;
+            color: #fff;
+            text-align: center;
+            border-radius: 6px;
+            padding: 5px 0;
+            position: absolute;
+            z-index: 1;
+            bottom: 125%;
+            left: 50%;
+            margin-left: -60px;
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+        .tooltip:hover .tooltiptext {
+            visibility: visible;
+            opacity: 1;
+        }
     </style>
     """, unsafe_allow_html=True)
 
-# Password Strength Checker with advanced features
+# Password Strength Checker
 def check_password_strength(password):
     score = 0
     feedback = []
     
-    # Basic checks
-    if len(password) >= 8:
+    # Length check
+    if len(password) >= 12:
+        score += 2
+    elif len(password) >= 8:
         score += 1
     else:
         feedback.append("Increase the length to at least 8 characters.")
     
-    if re.search(r"\\d", password):
-        score += 1
-    else:
-        feedback.append("Add at least one number.")
+    # Character diversity
+    if re.search(r"[a-z]", password): score += 1
+    if re.search(r"[A-Z]", password): score += 1
+    if re.search(r"\d", password): score += 1
+    if re.search(r"[@$!%*?&]", password): score += 1
     
-    if re.search(r"[A-Z]", password):
-        score += 1
-    else:
-        feedback.append("Add at least one uppercase letter.")
-    
-    if re.search(r"[@$!%*?&]", password):
-        score += 1
-    else:
-        feedback.append("Include at least one special character (@$!%*?&).")
-    
-    if re.search(r"[a-z]", password):
-        score += 1
-    else:
-        feedback.append("Add at least one lowercase letter.")
-    
-    # Advanced checks
-    if len(password) >= 12:
-        score += 1
-    
-    # Check for sequential characters
-    if re.search(r"(abc|bcd|cde|def|efg|fgh|ghi|hij|ijk|jkl|klm|lmn|mno|nop|opq|pqr|qrs|rst|stu|tuv|uvw|vwx|wxy|xyz|012|123|234|345|456|567|678|789)", password.lower()):
-        score -= 1
-        feedback.append("Avoid sequential characters (like 'abc' or '123').")
-    
-    # Check for repeated characters
-    if re.search(r"(.)\\1{2,}", password):
-        score -= 1
-        feedback.append("Avoid repeated characters (like 'aaa').")
-    
-    # Check for common passwords
+    # Common patterns and dictionary checks
     common_passwords = ["password", "123456", "qwerty", "admin", "welcome", "password123"]
     if password.lower() in common_passwords:
         score = 0
         feedback.append("This is a commonly used password and very insecure.")
+    
+    # Sequential and repeated characters
+    if re.search(r"(abc|bcd|cde|def|efg|fgh|ghi|hij|ijk|jkl|klm|lmn|mno|nop|opq|pqr|qrs|rst|stu|tuv|uvw|vwx|wxy|xyz|012|123|234|345|456|567|678|789)", password.lower()):
+        score -= 1
+        feedback.append("Avoid sequential characters (like 'abc' or '123').")
+    
+    if re.search(r"(.)\1{2,}", password):
+        score -= 1
+        feedback.append("Avoid repeated characters (like 'aaa').")
     
     # Ensure score is within bounds
     score = max(0, min(score, 6))
     
     return score, feedback
 
+# Password Generator
 def generate_password(length=12, include_uppercase=True, include_lowercase=True, 
                      include_numbers=True, include_special=True):
     characters = ""
@@ -141,22 +140,29 @@ def generate_password(length=12, include_uppercase=True, include_lowercase=True,
     # Ensure at least one character from each selected type
     password = []
     if include_lowercase:
-        password.append(random.choice(string.ascii_lowercase))
+        password.append(secrets.choice(string.ascii_lowercase))
     if include_uppercase:
-        password.append(random.choice(string.ascii_uppercase))
+        password.append(secrets.choice(string.ascii_uppercase))
     if include_numbers:
-        password.append(random.choice(string.digits))
+        password.append(secrets.choice(string.digits))
     if include_special:
-        password.append(random.choice(string.punctuation))
+        password.append(secrets.choice(string.punctuation))
     
     # Fill the rest of the password
     remaining_length = length - len(password)
-    password.extend(random.choice(characters) for _ in range(remaining_length))
+    password.extend(secrets.choice(characters) for _ in range(remaining_length))
     
     # Shuffle the password
     random.shuffle(password)
     return ''.join(password)
 
+# Passphrase Generator
+def generate_passphrase(num_words=4):
+    with open("wordlist.txt", "r") as f:
+        words = f.read().splitlines()
+    return ' '.join(secrets.choice(words) for _ in range(num_words))
+
+# Password Strength Meter UI
 def password_strength_meter():
     st.markdown("<div class='header-style'>🔒 Advanced Password Strength Meter</div>", unsafe_allow_html=True)
     
@@ -171,69 +177,19 @@ def password_strength_meter():
             progress_percentage = min(score / 6, 1.0)
             
             # Visual strength indicator
+            st.progress(progress_percentage)
             if score >= 5:
-                st.markdown(f"""
-                <div style="
-                    width: 100%;
-                    height: 20px;
-                    background: linear-gradient(to right, #ff0000 0%, #ffff00 50%, #00ff00 100%);
-                    border-radius: 5px;
-                    position: relative;
-                ">
-                    <div style="
-                        position: absolute;
-                        left: {progress_percentage * 100}%;
-                        top: -10px;
-                        transform: translateX(-50%);
-                        font-size: 20px;
-                    ">▼</div>
-                </div>
-                """, unsafe_allow_html=True)
                 st.success("✅ Strong password!")
             elif score >= 3:
-                st.markdown(f"""
-                <div style="
-                    width: 100%;
-                    height: 20px;
-                    background: linear-gradient(to right, #ff0000 0%, #ffff00 50%, #00ff00 100%);
-                    border-radius: 5px;
-                    position: relative;
-                ">
-                    <div style="
-                        position: absolute;
-                        left: {progress_percentage * 100}%;
-                        top: -10px;
-                        transform: translateX(-50%);
-                        font-size: 20px;
-                    ">▼</div>
-                </div>
-                """, unsafe_allow_html=True)
                 st.warning("⚠️ Medium strength password.")
             else:
-                st.markdown(f"""
-                <div style="
-                    width: 100%;
-                    height: 20px;
-                    background: linear-gradient(to right, #ff0000 0%, #ffff00 50%, #00ff00 100%);
-                    border-radius: 5px;
-                    position: relative;
-                ">
-                    <div style="
-                        position: absolute;
-                        left: {progress_percentage * 100}%;
-                        top: -10px;
-                        transform: translateX(-50%);
-                        font-size: 20px;
-                    ">▼</div>
-                </div>
-                """, unsafe_allow_html=True)
                 st.error("❌ Weak password!")
             
             # Password entropy calculation
             char_set_size = 0
             if re.search(r"[a-z]", password): char_set_size += 26
             if re.search(r"[A-Z]", password): char_set_size += 26
-            if re.search(r"\\d", password): char_set_size += 10
+            if re.search(r"\d", password): char_set_size += 10
             if re.search(r"[@$!%*?&]", password): char_set_size += 32
             
             if char_set_size > 0:
@@ -308,282 +264,53 @@ def password_strength_meter():
         """, unsafe_allow_html=True)
         st.markdown("</div>", unsafe_allow_html=True)
 
-# Enhanced Mood Tracker
+# Mood Tracker
 def mood_tracker():
-    MOOD_FILE = "mood_log.csv"
+    st.markdown("<div class='header-style'>😊 Mood Tracker</div>", unsafe_allow_html=True)
     
-    def load_mood_data():
-        if not os.path.exists(MOOD_FILE):
-            # Create file with headers if it doesn't exist
-            with open(MOOD_FILE, "w", encoding="utf-8", newline="") as file:
-                writer = csv.writer(file)
-                writer.writerow(["Date", "Time", "Mood", "Intensity", "Factors", "Notes"])
-            return pd.DataFrame(columns=["Date", "Time", "Mood", "Intensity", "Factors", "Notes"])
+    # Load or initialize mood data
+    if 'mood_data' not in st.session_state:
+        st.session_state.mood_data = pd.DataFrame(columns=["Date", "Mood", "Notes"])
+    
+    # Input form
+    with st.form("mood_form"):
+        mood = st.selectbox("How are you feeling today?", ["😊 Happy", "😐 Neutral", "😢 Sad", "😡 Angry", "😴 Tired"])
+        notes = st.text_area("Any notes about your mood?")
+        submitted = st.form_submit_button("Submit")
         
-        # Read the CSV file
-        df = pd.read_csv(MOOD_FILE, encoding="utf-8")
+        if submitted:
+            new_entry = pd.DataFrame({
+                "Date": [datetime.now().strftime("%Y-%m-%d %H:%M:%S")],
+                "Mood": [mood],
+                "Notes": [notes]
+            })
+            st.session_state.mood_data = pd.concat([st.session_state.mood_data, new_entry], ignore_index=True)
+            st.success("Mood entry saved!")
+    
+    # Display mood history
+    if not st.session_state.mood_data.empty:
+        st.markdown("<div class='subheader-style'>Mood History</div>", unsafe_allow_html=True)
+        st.dataframe(st.session_state.mood_data)
         
-        # Check if the DataFrame is not empty and has the Date column
-        if not df.empty and "Date" in df.columns:
-            df["Date"] = pd.to_datetime(df["Date"])
-        
-        return df
-
-    def save_mood_data(date, time, mood, intensity, factors, notes):
-        with open(MOOD_FILE, "a", encoding="utf-8", newline="") as file:
-            writer = csv.writer(file)
-            writer.writerow([date, time, mood, intensity, factors, notes])
-    
-    def get_download_link(df, filename, text):
-        csv = df.to_csv(index=False)
-        b64 = base64.b64encode(csv.encode()).decode()
-        href = f'<a href="data:file/csv;base64,{b64}" download="{filename}">📥 {text}</a>'
-        return href
-
-    st.markdown("<div class='header-style'>🌟 Advanced Mood Tracker 🌟</div>", unsafe_allow_html=True)
-    
-    tab1, tab2 = st.tabs(["Log Mood", "View Analytics"])
-    
-    with tab1:
-        st.markdown("<div class='mood-container'>", unsafe_allow_html=True)
-        st.markdown("<div class='subheader-style'>How are you feeling today?</div>", unsafe_allow_html=True)
+        # Visualizations
+        mood_counts = st.session_state.mood_data["Mood"].value_counts().reset_index()
+        mood_counts.columns = ["Mood", "Count"]
         
         col1, col2 = st.columns(2)
-        
         with col1:
-            date = st.date_input("Date", datetime.date.today())
-            time_now = datetime.datetime.now().strftime("%H:%M")
-            time_input = st.time_input("Time", datetime.datetime.strptime(time_now, "%H:%M").time())
-            
-            mood_options = {
-                "Happy 😊": "😊",
-                "Excited 🤩": "🤩",
-                "Calm 😌": "😌",
-                "Neutral 😐": "😐",
-                "Tired 😴": "😴",
-                "Anxious 😰": "😰",
-                "Sad 😢": "😢",
-                "Angry 😠": "😠",
-                "Stressed 😫": "😫"
-            }
-            
-            mood = st.selectbox("Select your mood", list(mood_options.keys()))
-            intensity = st.slider("Intensity", 1, 10, 5, help="How strongly do you feel this emotion?")
-            
+            st.plotly_chart(px.pie(mood_counts, values="Count", names="Mood", title="Mood Distribution"))
         with col2:
-            factors = st.multiselect(
-                "What factors contributed to this mood?",
-                ["Work", "Relationships", "Health", "Weather", "Sleep", "Exercise", 
-                 "Food", "Social Media", "News", "Finances", "Family", "Other"]
-            )
-            factors_str = ", ".join(factors) if factors else "None specified"
-            
-            notes = st.text_area("Notes (optional)", height=150, 
-                                help="Add any additional thoughts or context about your mood")
-            
-        if st.button("Log Mood", key="log_mood_button"):
-            save_mood_data(date, time_input.strftime("%H:%M"), mood, intensity, factors_str, notes)
-            st.success(f"✅ Mood logged Successfully for {date} at {time_input.strftime('%H:%M')}!")
+            st.plotly_chart(px.line(st.session_state.mood_data, x="Date", y="Mood", title="Mood Over Time"))
         
-        st.markdown("</div>", unsafe_allow_html=True)
-    
-    with tab2:
-        data = load_mood_data()
-        
-        if data.empty or len(data) <= 1:
-            st.info("Not enough mood data to display analytics. Please log your mood first.")
-        else:
-            st.markdown("<div class='mood-container'>", unsafe_allow_html=True)
-            
-            # Data preparation - FIXED: Added checks to prevent KeyError
-            if "Date" in data.columns:
-                # Date is already converted to datetime in load_mood_data function
-                if "Time" in data.columns:
-                    data["DateTime"] = pd.to_datetime(data["Date"].astype(str) + " " + data["Time"])
-                
-                if "Mood" in data.columns:
-                    data["Mood_Only"] = data["Mood"].apply(lambda x: x.split()[0])
-                
-                # Date range filter
-                col1, col2 = st.columns(2)
-                with col1:
-                    start_date = st.date_input("Start Date", data["Date"].min())
-                with col2:
-                    end_date = st.date_input("End Date", data["Date"].max())
-                
-                filtered_data = data[(data["Date"] >= pd.Timestamp(start_date)) & 
-                                    (data["Date"] <= pd.Timestamp(end_date))]
-                
-                if filtered_data.empty:
-                    st.warning("No data available for the selected date range.")
-                else:
-                    # Download option
-                    st.markdown(get_download_link(filtered_data, "mood_data.csv", 
-                                                "Download Mood Data"), unsafe_allow_html=True)
-                    
-                    # Mood distribution
-                    if "Mood" in filtered_data.columns:
-                        st.markdown("<div class='subheader-style'>📊 Mood Distribution</div>", unsafe_allow_html=True)
-                        mood_counts = filtered_data["Mood"].value_counts().reset_index()
-                        mood_counts.columns = ["Mood", "Count"]
-                        
-                        fig = px.pie(mood_counts, values="Count", names="Mood", 
-                                    title="Mood Distribution", hole=0.4)
-                        fig.update_traces(textposition='inside', textinfo='percent+label')
-                        st.plotly_chart(fig, use_container_width=True)
-                    
-                    # Mood over time
-                    if "Mood" in filtered_data.columns and "DateTime" in filtered_data.columns:
-                        st.markdown("<div class='subheader-style'>📈 Mood Trends Over Time</div>", unsafe_allow_html=True)
-                        
-                        # Create a mapping of moods to numeric values for the line chart
-                        mood_mapping = {
-                            "Happy 😊": 5,
-                            "Excited 🤩": 5,
-                            "Calm 😌": 4,
-                            "Neutral 😐": 3,
-                            "Tired 😴": 2,
-                            "Anxious 😰": 2,
-                            "Sad 😢": 1,
-                            "Angry 😠": 1,
-                            "Stressed 😫": 1
-                        }
-                        
-                        filtered_data["Mood_Value"] = filtered_data["Mood"].map(mood_mapping)
-                        
-                        # Line chart for mood over time
-                        fig = px.line(filtered_data, x="DateTime", y="Mood_Value", 
-                                    title="Mood Trend Over Time",
-                                    labels={"Mood_Value": "Mood (Higher is Better)", "DateTime": "Date & Time"})
-                        
-                        # Add markers for each data point
-                        fig.update_traces(mode="lines+markers", marker=dict(size=10))
-                        
-                        # Add a hover template to show the actual mood
-                        fig.update_traces(
-                            hovertemplate="<b>Date:</b> %{x|%Y-%m-%d %H:%M}<br>" +
-                                        "<b>Mood:</b> %{text}<br>" +
-                                        "<b>Intensity:</b> %{customdata}",
-                            text=filtered_data["Mood"],
-                            customdata=filtered_data["Intensity"]
-                        )
-                        
-                        st.plotly_chart(fig, use_container_width=True)
-                    
-                    # Intensity analysis
-                    if "Intensity" in filtered_data.columns and "Mood" in filtered_data.columns:
-                        st.markdown("<div class='subheader-style'>🔥 Mood Intensity Analysis</div>", unsafe_allow_html=True)
-                        
-                        col1, col2 = st.columns(2)
-                        
-                        with col1:
-                            # Average intensity by mood
-                            avg_intensity = filtered_data.groupby("Mood")["Intensity"].mean().reset_index()
-                            avg_intensity = avg_intensity.sort_values("Intensity", ascending=False)
-                            
-                            fig = px.bar(avg_intensity, x="Mood", y="Intensity", 
-                                        title="Average Intensity by Mood",
-                                        color="Intensity", color_continuous_scale="Viridis")
-                            st.plotly_chart(fig, use_container_width=True)
-                        
-                        with col2:
-                            # Intensity distribution
-                            fig = px.histogram(filtered_data, x="Intensity", 
-                                            title="Intensity Distribution",
-                                            color_discrete_sequence=["#6495ED"])
-                            fig.update_layout(bargap=0.1)
-                            st.plotly_chart(fig, use_container_width=True)
-                    
-                    # Factors analysis
-                    if "Factors" in filtered_data.columns:
-                        st.markdown("<div class='subheader-style'>🔍 Mood Factors Analysis</div>", unsafe_allow_html=True)
-                        
-                        # Extract all unique factors
-                        all_factors = []
-                        for factors_list in filtered_data["Factors"].dropna():
-                            if factors_list != "None specified":
-                                all_factors.extend([f.strip() for f in factors_list.split(",")])
-                        
-                        factor_counts = pd.Series(all_factors).value_counts().reset_index()
-                        if not factor_counts.empty:
-                            factor_counts.columns = ["Factor", "Count"]
-                            
-                            fig = px.bar(factor_counts, x="Factor", y="Count", 
-                                        title="Common Mood Factors",
-                                        color="Count", color_continuous_scale="Viridis")
-                            st.plotly_chart(fig, use_container_width=True)
-                        else:
-                            st.info("No mood factors have been recorded yet.")
-                    
-                    # Mood patterns
-                    if "Time" in filtered_data.columns and "Mood_Value" in filtered_data.columns:
-                        st.markdown("<div class='subheader-style'>🧩 Mood Patterns & Insights</div>", unsafe_allow_html=True)
-                        
-                        # Time of day analysis
-                        filtered_data["Hour"] = pd.to_datetime(filtered_data["Time"]).dt.hour
-                        
-                        # Define time periods
-                        def get_time_period(hour):
-                            if 5 <= hour < 12:
-                                return "Morning"
-                            elif 12 <= hour < 17:
-                                return "Afternoon"
-                            elif 17 <= hour < 21:
-                                return "Evening"
-                            else:
-                                return "Night"
-                        
-                        filtered_data["Time_Period"] = filtered_data["Hour"].apply(get_time_period)
-                        
-                        time_period_mood = filtered_data.groupby("Time_Period")["Mood_Value"].mean().reset_index()
-                        time_period_order = ["Morning", "Afternoon", "Evening", "Night"]
-                        time_period_mood["Time_Period"] = pd.Categorical(
-                            time_period_mood["Time_Period"], 
-                            categories=time_period_order, 
-                            ordered=True
-                        )
-                        time_period_mood = time_period_mood.sort_values("Time_Period")
-                        
-                        fig = px.bar(time_period_mood, x="Time_Period", y="Mood_Value",
-                                    title="Average Mood by Time of Day",
-                                    color="Mood_Value", color_continuous_scale="Viridis")
-                        st.plotly_chart(fig, use_container_width=True)
-                        
-                        # Generate insights
-                        st.markdown("<div class='highlight'>", unsafe_allow_html=True)
-                        
-                        # Most common mood
-                        if "Mood" in filtered_data.columns:
-                            most_common_mood = filtered_data["Mood"].mode()[0]
-                            st.write(f"📊 Your most common mood was **{most_common_mood}**")
-                        
-                        # Best time of day
-                        if not time_period_mood.empty:
-                            best_time = time_period_mood.loc[time_period_mood["Mood_Value"].idxmax()]["Time_Period"]
-                            st.write(f"🌞 Your mood tends to be best during the **{best_time}**")
-                        
-                        # Mood improvement or decline
-                        if len(filtered_data) >= 3 and "Mood_Value" in filtered_data.columns:
-                            first_half = filtered_data.iloc[:len(filtered_data)//2]["Mood_Value"].mean()
-                            second_half = filtered_data.iloc[len(filtered_data)//2:]["Mood_Value"].mean()
-                            
-                            if second_half > first_half:
-                                st.write(f"📈 Your mood has been **improving** over this period")
-                            elif second_half < first_half:
-                                st.write(f"📉 Your mood has been **declining** over this period")
-                            else:
-                                st.write(f"📊 Your mood has been **stable** over this period")
-                        
-                        # Most impactful factor if available
-                        if all_factors:
-                            most_common_factor = pd.Series(all_factors).value_counts().index[0]
-                            st.write(f"🔍 The factor most frequently affecting your mood was **{most_common_factor}**")
-                        
-                        st.markdown("</div>", unsafe_allow_html=True)
-            else:
-                st.warning("The mood data format is incorrect. Please log a new mood entry to fix this issue.")
-            
-            st.markdown("</div>", unsafe_allow_html=True)
+        # Export data
+        st.markdown("<div class='subheader-style'>Export Data</div>", unsafe_allow_html=True)
+        csv = st.session_state.mood_data.to_csv(index=False)
+        st.download_button(
+            label="Download Mood Data as CSV",
+            data=csv,
+            file_name="mood_data.csv",
+            mime="text/csv"
+        )
 
 # Main app
 def main():
@@ -591,8 +318,6 @@ def main():
     
     # Sidebar
     st.sidebar.title("Navigation")
-    
-    # Add app logo/header to sidebar
     st.sidebar.markdown("""
     <div style="text-align: center; margin-bottom: 20px;">
         <h1 style="color: #4CAF50;">🛠️ Multi-Tool App</h1>
@@ -605,32 +330,6 @@ def main():
         "Choose a feature",
         ["Password Strength Meter", "Mood Tracker"]
     )
-    
-    # Theme selector
-    theme = st.sidebar.selectbox(
-        "Choose Theme",
-        ["Light", "Dark"],
-        index=0
-    )
-    
-    # Apply dark mode if selected
-    if theme == "Dark":
-        st.markdown("""
-        <style>
-            .stApp {
-                background-color: #121212;
-                color: #FFFFFF;
-            }
-            .password-container, .mood-container {
-                background-color: #1E1E1E;
-                color: #FFFFFF;
-            }
-            .highlight {
-                background-color: #2D2D2D;
-                border-left: 3px solid #4CAF50;
-            }
-        </style>
-        """, unsafe_allow_html=True)
     
     # App info in sidebar
     st.sidebar.markdown("---")
