@@ -47,9 +47,9 @@ pip install -r requirements.txt
 
 ```
 4. Run the App
-
+```
    streamlit run app.py
-
+```
 🧰 Requirements
 Python 3.7+
 
